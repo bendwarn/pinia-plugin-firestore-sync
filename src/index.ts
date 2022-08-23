@@ -1,5 +1,6 @@
 import { CollectionReference, DocumentReference, onSnapshot, Query, Unsubscribe } from "firebase/firestore";
 import { PiniaPluginContext } from "pinia";
+import { ref, onScopeDispose } from 'vue'
 
 /**
  * Adds a `sync` function to your store.
@@ -16,37 +17,43 @@ import { PiniaPluginContext } from "pinia";
  * ```
  */
 export const PiniaFirestoreSync = ({ store }: PiniaPluginContext) => {
+  const unsub = ref<Unsubscribe>()
   store.sync = (key, ref) => {
+    if (unsub.value) {
+      unsub.value()
+    }
     // Document
     if (ref instanceof DocumentReference) {
-      return onSnapshot(ref, (ds) => {
+      unsub.value = onSnapshot(ref, (ds) => {
         if (ds.exists()) {
           const data = ds.data()
           Object.defineProperty(data, 'id', {
             value: ds.id,
             writable: false,
-            enumerable:false
+            enumerable: false,
           })
           store.$patch({ [key]: data })
         }
       })
-    }
-
-    // Collection or Query
-    return onSnapshot(ref, async (qs) => {
-      const datum = qs.docs.map(d => {
-        const data = d.data()
-        Object.defineProperty(data, 'id', {
-          value: d.id,
-          writable: false,
-          enumerable:false
+    } else {
+      // Collection or Query
+      unsub.value = onSnapshot(ref, async (qs) => {
+        const datum = qs.docs.map((d) => {
+          const data = d.data()
+          Object.defineProperty(data, 'id', {
+            value: d.id,
+            writable: false,
+            enumerable: false,
+          })
+          return data
         })
-        return data
+        store.$patch((state) => {
+          state[key] = datum
+        })
       })
-      store.$patch((state) => {
-        state[key] = datum
-      })
-    })
+    }
+    tryOnScopeDispose(unsub.value)
+    return unsub.value
   }
 }
 
@@ -89,7 +96,7 @@ declare module 'pinia' {
      * })
      *```
      */
-    sync(key: string, ref: DocumentReference): Unsubscribe
+    sync(key: keyof S, ref: DocumentReference): Unsubscribe
     /**
      * 
      * @param key Key name of state which synchronize with firestore collection data.
@@ -125,7 +132,7 @@ declare module 'pinia' {
      * })
      *```
      */
-    sync(key: string, ref: CollectionReference): Unsubscribe
+    sync(key: keyof S, ref: CollectionReference): Unsubscribe
     /**
      * 
      * @param key Key name of state which synchronize with firestore collection data.
@@ -160,6 +167,6 @@ declare module 'pinia' {
      * })
      * ```
      */
-    sync(key: string, ref: Query): Unsubscribe
+    sync(key: keyof S, ref: Query): Unsubscribe
   }
 }
