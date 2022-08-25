@@ -17,14 +17,14 @@ import { ref, onScopeDispose } from 'vue'
  * ```
  */
 export const PiniaFirestoreSync = ({ store }: PiniaPluginContext) => {
-  const unsub = ref<Unsubscribe>()
+  const unsub = reactive<{ [K in keyof typeof store.$state]: Unsubscribe }>({})
   store.sync = (key, ref) => {
-    if (unsub.value) {
-      unsub.value()
+    if (unsub[key]) {
+      unsub[key]()
     }
     // Document
     if (ref instanceof DocumentReference) {
-      unsub.value = onSnapshot(ref, (ds) => {
+      unsub[key] = onSnapshot(ref, (ds) => {
         if (ds.exists()) {
           const data = ds.data()
           Object.defineProperty(data, 'id', {
@@ -32,12 +32,18 @@ export const PiniaFirestoreSync = ({ store }: PiniaPluginContext) => {
             writable: false,
             enumerable: false,
           })
-          store.$patch({ [key]: data })
+          store.$patch((state) => {
+            state[key] = data
+          })
+        } else {
+          store.$patch((state) => {
+            state[key] = undefined
+          })
         }
       })
     } else {
       // Collection or Query
-      unsub.value = onSnapshot(ref, async (qs) => {
+      unsub[key] = onSnapshot(ref, async (qs) => {
         const datum = qs.docs.map((d) => {
           const data = d.data()
           Object.defineProperty(data, 'id', {
@@ -52,8 +58,8 @@ export const PiniaFirestoreSync = ({ store }: PiniaPluginContext) => {
         })
       })
     }
-    tryOnScopeDispose(unsub.value)
-    return unsub.value
+    tryOnScopeDispose(unsub[key])
+    return unsub[key]
   }
 }
 
